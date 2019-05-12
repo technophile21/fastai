@@ -24,6 +24,8 @@ from pathlib import Path
 import json
 from PIL import ImageDraw, ImageFont
 from matplotlib import patches, patheffects
+
+torch.cuda.set_device(0)
 # -
 
 PATH = Path('../../../data/pascal')
@@ -170,5 +172,15 @@ show_img(md.val_ds.denorm(to_np(x))[0]);
 
 learn = ConvLearner.pretrained(f_model, md, metrics=[accuracy])
 learn.opt_fn = optim.Adam
+
+lrf=learn.lr_find(1e-5,100)
+
+learn.sched.plot()
+
+learn.sched.plot(n_skip=5, n_skip_end=1)
+
+lr = 2e-2
+
+learn.fit(lr, 1, cycle_len=1)
 
 
