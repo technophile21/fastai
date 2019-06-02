@@ -19,7 +19,7 @@
 from fastai.conv_learner import *
 from fastai.dataset import *
 import gzip
-#torch.cuda.set_device(0)
+torch.cuda.set_device(0)
 
 PATH = Path('../../../data/lsun')
 PATH_TRAIN = PATH/'bedroom'
@@ -32,9 +32,9 @@ files = PATH_TRAIN.glob('**/*.jpg')
 
 with PATH_CSV.open('w') as fo:
     for f in files:
-        #fo.write(f'{f.relative_to(PATH_TRAIN)},0\n')
+        fo.write(f'{f.relative_to(PATH_TRAIN)},0\n')
         #For sample of data
-        if random.random()<0.1: fo.write(f'{f.relative_to(PATH_TRAIN)},0\n')
+        #if random.random()<0.1: fo.write(f'{f.relative_to(PATH_TRAIN)},0\n')
         
 # -
 
@@ -126,7 +126,7 @@ class DCGAN_G(nn.Module):
         x = self.extra(x)
         x = self.final(x)
         return self.tanh(x)
-        
+
 
 
 bs, sz, nz = 64,64,100
@@ -140,8 +140,8 @@ x,_ = next(iter(md.val_dl))
 
 plt.imshow(md.trn_ds.denorm(x)[0])
 
-netG = DCGAN_G(nz, 3, 64, sz, 1) #.cuda()
-netD = DCGAN_D(3, sz, 64, 1)
+netG = DCGAN_G(nz, 3, 64, sz, 1).cuda()
+netD = DCGAN_D(3, sz, 64, 1).cuda()
 
 netG
 
@@ -184,40 +184,39 @@ def train(niter, first=True):
         i,n = 0,len(md.trn_dl)
         print(n)
         with tqdm(total=n) as pbar:
-            set_trainable(netG, False)
-            set_trainable(netD, True)
-            d_iter = 100 if (first and (gen_iter < 25) or (gen_iter%500 == 0)) else 5
-            j = 0
-            while (j < d_iter) and (i < n):
-                j += 1
-                i += 1
-                for p in netD.parameters(): p.data.clamp(-0.01, 0.01)
-                real = V(next(data_iter)[0])
-                real_loss = netD(real)
-                fake = netG(create_noise(real.size(0)))
-                fake_loss = netD(V(fake.data))
-                lossD = real_loss - fake_loss
-                netD.zero_grad()
-                lossD.backward()
-                optimizerD.step()
-                pbar.update()
-                
-            set_trainable(netD, False)
-            set_trainable(netG, True)
-            netG.zero_grad()
-            lossG = netD(netG(create_noise(bs))).mean(0).view(1)
-            lossG.backward()
-            optimizerG.step()
-            gen_iter += 1
+            while i < n:
+                set_trainable(netG, False)
+                set_trainable(netD, True)
+                d_iter = 100 if (first and (gen_iter < 25) or (gen_iter%500 == 0)) else 5
+                j = 0
+                while (j < d_iter) and (i < n):
+                    j += 1
+                    i += 1
+                    for p in netD.parameters(): p.data.clamp(-0.01, 0.01)
+                    real = V(next(data_iter)[0])
+                    real_loss = netD(real)
+                    fake = netG(create_noise(real.size(0)))
+                    fake_loss = netD(V(fake.data))
+                    lossD = real_loss - fake_loss
+                    netD.zero_grad()
+                    lossD.backward()
+                    optimizerD.step()
+                    pbar.update()
+
+                set_trainable(netD, False)
+                set_trainable(netG, True)
+                netG.zero_grad()
+                lossG = netD(netG(create_noise(bs))).mean(0).view(1)
+                lossG.backward()
+                optimizerG.step()
+                gen_iter += 1
             
         print(f'Loss_D {to_np(lossD)}; Loss_G {to_np(lossG)}; '
               f'D_real {to_np(real_loss)}; Loss_D_fake {to_np(fake_loss)}')
-            
 
 
-# +
-#torch.backends.cudnn.benchmark=True
-# -
+
+torch.backends.cudnn.benchmark=True
 
 train(1, False)
 
@@ -227,5 +226,16 @@ set_trainable(netD, True)
 set_trainable(netG, True)
 optimizerD = optim.RMSprop(netD.parameters(), lr = 1e-5)
 optimizerG = optim.RMSprop(netG.parameters(), lr = 1e-5)
+
+train(1, False)
+
+# +
+netD.eval(); netG.eval();
+fake = netG(fixed_noise).data.cpu()
+faked = np.clip(md.trn_ds.denorm(fake),0,1)
+
+plt.figure(figsize=(9,9))
+plt.imshow(gallery(faked, 8));
+# -
 
 
