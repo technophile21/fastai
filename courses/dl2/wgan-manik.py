@@ -30,12 +30,16 @@ os.makedirs(PATH_TMP, exist_ok=True)
 # +
 files = PATH_TRAIN.glob('**/*.jpg')
 
+cnt = 0
 with PATH_CSV.open('w') as fo:
     for f in files:
+        cnt += 1
         fo.write(f'{f.relative_to(PATH_TRAIN)},0\n')
         #For sample of data
         #if random.random()<0.1: fo.write(f'{f.relative_to(PATH_TRAIN)},0\n')
-        
+print(cnt)
+
+
 # -
 
 class ConvBlock(nn.Module):
@@ -104,35 +108,32 @@ class DCGAN_G(nn.Module):
         cngf, tisize = ngf//2, 4
         while tisize!=isize: cngf*=2; tisize*=2
             
-        self.initial = DeConvBlock(nz, cngf, ks=4, stride=1)
+        layers = [DeConvBlock(nz, cngf, ks=4, stride=1)]
         
-        pyr_layers = []
+        #pyr_layers = []
         csize, cndf = 4, cngf
         while csize < isize//2:
-            pyr_layers.append(DeConvBlock(cngf, cngf//2, ks=4, stride=2, pad=1))
+            layers.append(DeConvBlock(cngf, cngf//2, ks=4, stride=2, pad=1))
             cngf = cngf // 2
             csize *= 2
             
-        self.pyramid = nn.Sequential(*pyr_layers)
+#        self.pyramid = nn.Sequential(*pyr_layers)
         
-        self.extra = nn.Sequential(*[DeConvBlock(cngf, cngf, ks=3, stride=1, pad=1) for t in range(extra_layers)])
-        self.final = nn.ConvTranspose2d(cngf, nc, kernel_size=4, stride=2, padding=1, bias=False)
-        
-        self.tanh = nn.Tanh()
+        layers += [DeConvBlock(cngf, cngf, ks=3, stride=1, pad=1) for t in range(extra_layers)]
+        layers.append(nn.ConvTranspose2d(cngf, nc, kernel_size=4, stride=2, padding=1, bias=False))
+        self.features = nn.Sequential(*layers)
+        #self.tanh = nn.Tanh()
         
     def forward(self, x):
-        x = self.initial(x)
-        x = self.pyramid(x)
-        x = self.extra(x)
-        x = self.final(x)
-        return self.tanh(x)
+        return F.tanh(self.features(x))
 
 
 
 bs, sz, nz = 64,64,100
 
 tfms = tfms_from_stats(inception_stats, sz)
-md = ImageClassifierData.from_csv(PATH, 'bedroom', PATH_CSV, bs=bs, tfms=tfms, skip_header=False, continuous=True)
+md = ImageClassifierData.from_csv(PATH, 'bedroom', PATH_CSV, bs=128, tfms=tfms, skip_header=False, continuous=True)
+len(md.trn_dl)
 
 md = md.resize(128)
 
@@ -192,13 +193,13 @@ def train(niter, first=True):
                 while (j < d_iter) and (i < n):
                     j += 1
                     i += 1
-                    for p in netD.parameters(): p.data.clamp(-0.01, 0.01)
+                    for p in netD.parameters(): p.data.clamp_(-0.01, 0.01)
                     real = V(next(data_iter)[0])
                     real_loss = netD(real)
                     fake = netG(create_noise(real.size(0)))
                     fake_loss = netD(V(fake.data))
-                    lossD = real_loss - fake_loss
                     netD.zero_grad()
+                    lossD = real_loss - fake_loss
                     lossD.backward()
                     optimizerD.step()
                     pbar.update()
@@ -212,7 +213,7 @@ def train(niter, first=True):
                 gen_iter += 1
             
         print(f'Loss_D {to_np(lossD)}; Loss_G {to_np(lossG)}; '
-              f'D_real {to_np(real_loss)}; Loss_D_fake {to_np(fake_loss)}')
+            f'D_real {to_np(real_loss)}; Loss_D_fake {to_np(fake_loss)}')
 
 
 
